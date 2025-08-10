@@ -1,0 +1,23 @@
+[project]
+name = "app"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi[standard]>=0.116.1",
+    "httpx>=0.28.1",
+    "orjson>=3.11.1",
+    "redis>=6.4.0",
+]
+
+[tool.ruff]
+line-length = 79
+
+[tool.ruff.lint]
+preview = true
+select = ['I', 'F', 'E', 'W', 'PL', 'PT', 'FAST']
+
+[tool.ruff.format]
+preview = true
+quote-style = 'single'
