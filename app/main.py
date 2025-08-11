@@ -4,10 +4,11 @@ from fastapi import BackgroundTasks, FastAPI
 
 from .models import PaymentRequest
 from .queue import init_consumer_loop
+from .services import send_payment
 from .tasks import add_payment
 
 app = FastAPI()
-init_consumer_loop(...)
+init_consumer_loop(send_payment)
 
 
 @app.post('/payments', status_code=HTTPStatus.ACCEPTED)

@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     REDIS_DB: int
     REDIS_QUEUE: str
     MAX_WORKERS: int
+    PAYMENT_PROCESSOR_URL: str
+    PAYMENT_PROCESSOR_TIMEOUT: int
+    PAYMENT_KEY: str
 
 
 @lru_cache()

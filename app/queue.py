@@ -1,7 +1,10 @@
 import asyncio
+from datetime import datetime, timezone
 
+import httpx
 import orjson
 
+from .services import save_payment
 from .settings import redis_client, settings
 
 
@@ -24,7 +27,10 @@ async def consumer_loop(send_payment: callable) -> None:
                 data = redis_client.brpop(settings.REDIS_QUEUE, timeout=1)
                 try:
                     payment = orjson.loads(data)
-                    await send_payment(payment)
+                    request_at = datetime.now(timezone.utc)
+                    timeout = httpx.Timeout(30, connect=1.0)
+                    if await send_payment(payment, request_at, timeout):
+                        await save_payment(payment, request_at)
                 except Exception:
                     print(
                         f'Error payment {payment['correlationId']}: try again'
