@@ -1,11 +1,10 @@
-import asyncio
+from datetime import datetime
 from http import HTTPStatus
 
 from fastapi import BackgroundTasks, FastAPI
 
 from app.models import PaymentRequest
-from app.queue import consumer_loop
-from app.services import send_payment
+from app.services import get_summary
 from app.tasks import add_payment
 
 app = FastAPI()
@@ -17,5 +16,8 @@ async def payments(pr: PaymentRequest, background_tasks: BackgroundTasks):
     return {'status': 'accepted'}
 
 
-if __name__ == '__main__':
-    asyncio.run(consumer_loop(send_payment))
+@app.get('/payments-summary', status_code=HTTPStatus.OK)
+async def payments_summary(from_: str | None = None, to: str | None = None):
+    from_ = datetime.fromisoformat(from_) if from_ else None
+    to = datetime.fromisoformat(to) if to else None
+    return await get_summary(from_, to)
