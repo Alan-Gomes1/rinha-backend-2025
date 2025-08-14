@@ -43,8 +43,3 @@ async def consumer_loop(send_payment: callable) -> None:
         asyncio.create_task(worker(i)) for i in range(settings.MAX_WORKERS)
     ]
     asyncio.gather(*tasks)
-
-
-def init_consumer_loop(send_payment: callable) -> None:
-    """Inicia o loop de consumo de mensagens"""
-    asyncio.run(consumer_loop(send_payment))

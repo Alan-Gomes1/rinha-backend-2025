@@ -1,8 +1,7 @@
 from functools import lru_cache
-from typing import Final
 
+import redis.asyncio as ioredis
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from redis.asyncio.connection import ConnectionPool
 
 
 class Settings(BaseSettings):
@@ -29,21 +28,21 @@ def get_settings() -> Settings:
     return Settings()
 
 
-def get_redis_client(settings: Settings) -> ConnectionPool:
+def get_redis_client(settings: Settings) -> ioredis.Redis:
     """Pega a conexão com o redis
 
     Args:
         settings (Settings): Objeto de configurações
 
     Returns:
-        ConnectionPool: conexão
+        redis.Redis: cliente Redis
     """
-    return ConnectionPool(
+    return ioredis.Redis(
         host=settings.REDIS_HOST,
         port=settings.REDIS_PORT,
         db=settings.REDIS_DB,
     )
 
 
-settings = Final[get_settings()]
-redis_client = Final[get_redis_client(settings)]
+settings = get_settings()
+redis_client = get_redis_client(settings)
