@@ -1,13 +1,31 @@
+import asyncio
+from contextlib import asynccontextmanager
 from datetime import datetime
 from http import HTTPStatus
 
 from fastapi import BackgroundTasks, FastAPI
 
 from app.models import PaymentRequest
-from app.services import get_summary
+from app.queue import consumer_loop, fallback_consumer_loop
+from app.services import get_summary, payment_processor
+from app.settings import settings
 from app.tasks import add_payment
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    main_consumer = asyncio.create_task(
+        consumer_loop(settings.REDIS_QUEUE, payment_processor, 'Main')
+    )
+    fallback_consumer = asyncio.create_task(
+        fallback_consumer_loop(payment_processor)
+    )
+    yield
+    main_consumer.cancel()
+    fallback_consumer.cancel()
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 @app.post('/payments', status_code=HTTPStatus.ACCEPTED)

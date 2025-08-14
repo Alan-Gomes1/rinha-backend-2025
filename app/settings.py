@@ -12,10 +12,14 @@ class Settings(BaseSettings):
     REDIS_PORT: int
     REDIS_DB: int
     REDIS_QUEUE: str
+    REDIS_PENDING_QUEUE: str
+    REDIS_FALLBACK_QUEUE: str
     MAX_WORKERS: int
+    FALLBACK_WORKER_DELAY: int
     PAYMENT_PROCESSOR_URL: str
     PAYMENT_PROCESSOR_TIMEOUT: int
     PAYMENT_KEY: str
+    PAYMENT_ZKEY: str
 
 
 @lru_cache()
