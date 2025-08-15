@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     REDIS_PENDING_QUEUE: str
     REDIS_FALLBACK_QUEUE: str
     MAX_WORKERS: int
+    MIN_WORKERS: int
     FALLBACK_WORKER_DELAY: int
     PAYMENT_PROCESSOR_URL: str
     PAYMENT_PROCESSOR_TIMEOUT: int
