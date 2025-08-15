@@ -1,3 +1,7 @@
+import asyncio
+from datetime import datetime, timezone
+
+import httpx
 import orjson
 
 from .settings import redis_client, settings
@@ -23,3 +27,26 @@ async def add_payment_to_fallback_queue(payment: dict) -> None:
     """
     payment_json = orjson.dumps(payment).decode()
     await redis_client.lpush(settings.REDIS_FALLBACK_QUEUE, payment_json)
+
+
+async def retry_payment(
+    payment: dict, timeout: httpx.Timeout, send_payment: callable,
+    save_payment: callable
+) -> None:
+    """Tenta reenviar um pagamento que falhou em até 10 tentativas,
+    com um intervalo de 5 segundos entre cada tentativa.
+
+    Args:
+        payment (dict): O dicionário contendo os dados do pagamento.
+        timeout (httpx.Timeout): O objeto de timeout para a requisição HTTP.
+        send_payment (callable): A função para enviar o pagamento.
+        save_payment (callable): A função para salvar o pagamento.
+    """
+    for _ in range(10):
+        await asyncio.sleep(5)
+        request_at = datetime.now(tz=timezone.utc)
+        if await send_payment(payment, request_at, timeout):
+            await save_payment(payment, request_at)
+            break
+    else:
+        print(f'Fail to retry payment {payment["correlationId"]}')
