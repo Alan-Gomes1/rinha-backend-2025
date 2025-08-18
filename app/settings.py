@@ -12,15 +12,20 @@ class Settings(BaseSettings):
     REDIS_PORT: int
     REDIS_DB: int
     REDIS_QUEUE: str
-    REDIS_PENDING_QUEUE: str
     REDIS_FALLBACK_QUEUE: str
+    REDIS_DEAD_LETTER_QUEUE: str
     MAX_WORKERS: int
     MIN_WORKERS: int
     FALLBACK_WORKER_DELAY: int
     PAYMENT_PROCESSOR_URL: str
-    PAYMENT_PROCESSOR_TIMEOUT: int
-    PAYMENT_KEY: str
     PAYMENT_ZKEY: str
+    PAYMENT_FALLBACK_ZKEY: str
+    MAX_RETRIES: int
+    TIMEOUT: int
+    CONNECT_TIMEOUT: float
+    REDIS_KEY_EXPIRATION: int
+    REDIS_PENDING_QUEUE: str
+    PAYMENT_KEY: str
 
 
 @lru_cache()
@@ -34,7 +39,7 @@ def get_settings() -> Settings:
 
 
 def get_redis_client(settings: Settings) -> ioredis.Redis:
-    """Pega a conexão com o redis
+    """Pela a conexão com o redis a partir de um pool de conexões.
 
     Args:
         settings (Settings): Objeto de configurações
@@ -42,11 +47,12 @@ def get_redis_client(settings: Settings) -> ioredis.Redis:
     Returns:
         redis.Redis: cliente Redis
     """
-    return ioredis.Redis(
+    pool = ioredis.ConnectionPool(
         host=settings.REDIS_HOST,
         port=settings.REDIS_PORT,
         db=settings.REDIS_DB,
     )
+    return ioredis.Redis.from_pool(pool)
 
 
 settings = get_settings()

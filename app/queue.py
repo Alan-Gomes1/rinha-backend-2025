@@ -1,11 +1,16 @@
 import asyncio
 
+import orjson
+
 from app.settings import redis_client, settings
 
 
 async def consumer_loop(
-    queue_name: str, payment_processor: callable, worker_id_prefix: str,
-    workers: int
+    queue_name: str,
+    payment_processor: callable,
+    worker_id_prefix: str,
+    workers: int,
+    is_fallback: bool = False,
 ) -> None:
     """Inicia um loop de consumidor genérico para uma fila específica.
 
@@ -14,6 +19,7 @@ async def consumer_loop(
         payment_processor (callable): A função para processar cada mensagem.
         worker_id_prefix (str): Um prefixo para identificar os workers.
         workers (int): O número de workers a serem iniciados.
+        is_fallback (bool, optional): Se o consumidor é de fallback.
     """
 
     async def worker(worker_id: int) -> None:
@@ -24,25 +30,41 @@ async def consumer_loop(
                 if not message:
                     continue
 
-                if await redis_client.get('failing') == 'true':
+                if (
+                    await redis_client.get('failing') == 'true'
+                    and is_fallback
+                ):
                     await asyncio.sleep(settings.FALLBACK_WORKER_DELAY)
 
                 _, data = message
                 print(f'{worker_id_prefix} Worker {worker_id} received a job.')
                 try:
-                    await payment_processor(data)
+                    await payment_processor(data, is_fallback)
                 except Exception as ex:
-                    print(f'Error processing payment: {ex}. Re-queuing...')
-                    await redis_client.lpush(queue_name, data)
+                    payment = orjson.loads(data)
+                    correlation_id = payment.get('correlationId')
+                    retry_key = f'retry:{correlation_id}'
+                    retries = await redis_client.incr(retry_key)
+                    await redis_client.expire(retry_key, 180)
+                    if retries > settings.MAX_RETRIES:
+                        print(
+                            f'Payment {correlation_id} failed after'
+                            f' {retries} retries. Adding to dead-letter queue.'
+                        )
+                        await redis_client.lpush(
+                            settings.REDIS_DEAD_LETTER_QUEUE, data
+                        )
+                    else:
+                        print(
+                            f'Error processing payment: {ex}. Re-queuing...'
+                        )
+                        await redis_client.lpush(queue_name, data)
 
             except Exception as ex:
                 print(f'Error in {worker_id_prefix} worker {worker_id}: {ex}')
                 await asyncio.sleep(2)
 
-    tasks = [
-        asyncio.create_task(worker(i))
-        for i in range(workers)
-    ]
+    tasks = [asyncio.create_task(worker(i)) for i in range(workers)]
     await asyncio.gather(*tasks)
 
 
@@ -51,11 +73,18 @@ if __name__ == '__main__':
 
     print('Starting consumer workers...')
     main_consumer_loop = consumer_loop(
-        settings.REDIS_QUEUE, payment_processor, 'Main', settings.MAX_WORKERS
+        settings.REDIS_QUEUE,
+        payment_processor,
+        'Main',
+        settings.MAX_WORKERS,
+        is_fallback=False,
     )
     fallback_consumer_loop = consumer_loop(
-        settings.REDIS_FALLBACK_QUEUE, payment_processor, 'Fallback',
-        settings.MIN_WORKERS
+        settings.REDIS_FALLBACK_QUEUE,
+        payment_processor,
+        'Fallback',
+        settings.MIN_WORKERS,
+        is_fallback=True,
     )
     health_check_task = health_check_loop()
 
