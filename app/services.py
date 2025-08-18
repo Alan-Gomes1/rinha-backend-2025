@@ -1,5 +1,7 @@
 import asyncio
 from datetime import datetime, timezone
+from decimal import Decimal
+from http import HTTPStatus
 
 import httpx
 import orjson
@@ -8,47 +10,11 @@ from .settings import redis_client, settings
 from .tasks import add_fallback_payment
 
 client = httpx.AsyncClient()
-LUA_SUMMARY_SCRIPT = """
-local default_payments = redis.call('ZRANGEBYSCORE', KEYS[1], ARGV[1], ARGV[2])
-local fallback_payments = redis.call('ZRANGEBYSCORE', KEYS[2], ARGV[1], ARGV[2])
-local default_total_requests = 0
-local default_total_amount = 0.0
-local fallback_total_requests = 0
-local fallback_total_amount = 0.0
-
-for _, payment_json in ipairs(default_payments) do
-    local payment = cjson.decode(payment_json)
-    default_total_requests = default_total_requests + 1
-    default_total_amount = default_total_amount + tonumber(payment['amount'])
-end
-
-for _, payment_json in ipairs(fallback_payments) do
-    local payment = cjson.decode(payment_json)
-    fallback_total_requests = fallback_total_requests + 1
-    fallback_total_amount = fallback_total_amount + tonumber(payment['amount'])
-end
-
-return {
-    default_total_requests,
-    default_total_amount,
-    fallback_total_requests,
-    fallback_total_amount
-}
-"""
-LUA_SUMMARY_SCRIPT_SHA: str | None = None
-
-
-async def load_lua_scripts() -> None:
-    """Carrega os scripts Lua no Redis e armazena os hashes SHA."""
-    global LUA_SUMMARY_SCRIPT_SHA
-    if not LUA_SUMMARY_SCRIPT_SHA:
-        LUA_SUMMARY_SCRIPT_SHA = await redis_client.script_load(
-            LUA_SUMMARY_SCRIPT
-        )
 
 
 async def send_payment(
-    payment: dict, requested_at: datetime, timeout: httpx.Timeout
+    correlation_id: str, amount: str, requested_at: datetime,
+    timeout: httpx.Timeout
 ) -> bool:
     """Envia um pagamento para o processador de pagamentos externo (default).
 
@@ -61,9 +27,15 @@ async def send_payment(
         bool: Se o pagamento foi processado com sucesso.
     """
     url = settings.PAYMENT_PROCESSOR_URL
-    data = {**payment, 'requestedAt': requested_at.isoformat()}
+    data = {
+        'correlationId': correlation_id,
+        'amount': amount,
+        'requestedAt': requested_at.isoformat(),
+    }
     try:
         response = await client.post(url, json=data, timeout=timeout)
+        if response.status_code == HTTPStatus.INTERNAL_SERVER_ERROR:
+            await redis_client.set('failing', 'true')
         response.raise_for_status()
         return True
     except (httpx.RequestError, httpx.HTTPStatusError) as e:
@@ -72,7 +44,7 @@ async def send_payment(
 
 
 async def save_payment(
-    payment: dict, requested_at: datetime, is_fallback: bool = False
+    correlation_id: str, amount: str, requested_at: datetime
 ) -> None:
     """Salva o pagamento processado.
 
@@ -86,14 +58,13 @@ async def save_payment(
     else:
         timestamp = float(requested_at)
 
-    data = {**payment, 'requested_at': timestamp}
+    data = {
+        'correlationId': correlation_id,
+        'amount': amount,
+        'requested_at': timestamp
+    }
     payment_json = orjson.dumps(data).decode()
-    key = (
-        settings.PAYMENT_FALLBACK_ZKEY
-        if is_fallback
-        else settings.PAYMENT_ZKEY
-    )
-    await redis_client.zadd(key, {payment_json: timestamp})
+    await redis_client.zadd(settings.PAYMENT_ZKEY, {payment_json: timestamp})
 
 
 async def purge_payments() -> None:
@@ -119,52 +90,43 @@ async def get_summary(
     """
     min_score = _from.timestamp() if _from else '-inf'
     max_score = to.timestamp() if to else '+inf'
-    result = await redis_client.evalsha(
-        LUA_SUMMARY_SCRIPT_SHA,
-        2,
-        settings.PAYMENT_ZKEY,
-        settings.PAYMENT_FALLBACK_ZKEY,
-        min_score,
-        max_score,
+
+    payments = await redis_client.zrangebyscore(
+        settings.PAYMENT_ZKEY, min_score, max_score
     )
+    total_requests = len(payments)
+    amount = Decimal(0)
+
+    for payment_json in payments:
+        payment = orjson.loads(payment_json)
+        amount += Decimal(payment['amount'])
+
     summary = {
-        'default': {
-            'totalRequests': result[0],
-            'totalAmount': float(result[1]),
-        },
-        'fallback': {
-            'totalRequests': result[2],
-            'totalAmount': float(result[3]),
-        },
+        'default': {'totalRequests': total_requests, 'totalAmount': amount},
+        'fallback': {'totalRequests': 0, 'totalAmount': 0},
     }
     return summary
 
 
-async def payment_processor(data: bytes, is_fallback: bool = False) -> None:
+async def payment_processor(data: bytes) -> bool:
     """Processa um pagamento recebido da fila e salva no banco em memória.
 
     Args:
         data (bytes): Os dados do pagamento em formato bytes.
-        is_fallback (bool, optional): Se o pagamento é de fallback.
     """
     payment = orjson.loads(data)
+    amount = str(payment.get('amount'))
     correlation_id = payment.get('correlationId')
-    processed_key = f'processed:{correlation_id}'
-    if await redis_client.get(processed_key):
-        print(f'Payment {correlation_id} already processed. Skipping.')
-        return
+
+    if await redis_client.get('failing') == b'true':
+        return False
 
     request_at = datetime.now(tz=timezone.utc)
     timeout = httpx.Timeout(settings.TIMEOUT, connect=settings.CONNECT_TIMEOUT)
-    if await send_payment(payment, request_at, timeout):
-        await save_payment(payment, request_at, is_fallback)
-        await redis_client.set(
-            processed_key, 'true', ex=settings.REDIS_KEY_EXPIRATION
-        )
-    elif not is_fallback:
-        await add_fallback_payment(
-            payment.get('correlationId'), payment.get('amount')
-        )
+    if await send_payment(correlation_id, amount, request_at, timeout):
+        await save_payment(correlation_id, amount, request_at)
+        return True
+    return False
 
 
 async def health_check() -> None:

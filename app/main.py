@@ -6,13 +6,12 @@ from fastapi import BackgroundTasks, FastAPI
 from fastapi.responses import ORJSONResponse
 
 from app.models import PaymentRequest
-from app.services import get_summary, load_lua_scripts, purge_payments
+from app.services import get_summary, purge_payments
 from app.tasks import add_payment
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await load_lua_scripts()
     yield
 
 
