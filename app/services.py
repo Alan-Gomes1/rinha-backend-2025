@@ -7,7 +7,6 @@ import httpx
 import orjson
 
 from .settings import redis_client, settings
-from .tasks import add_fallback_payment
 
 client = httpx.AsyncClient()
 

@@ -1,4 +1,3 @@
-from contextlib import asynccontextmanager
 from datetime import datetime
 from http import HTTPStatus
 
@@ -9,13 +8,7 @@ from app.models import PaymentRequest
 from app.services import get_summary, purge_payments
 from app.tasks import add_payment
 
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    yield
-
-
-app = FastAPI(default_response_class=ORJSONResponse, lifespan=lifespan)
+app = FastAPI(default_response_class=ORJSONResponse)
 
 
 @app.post('/payments', status_code=HTTPStatus.ACCEPTED)
