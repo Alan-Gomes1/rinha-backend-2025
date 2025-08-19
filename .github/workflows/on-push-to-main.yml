@@ -1,4 +1,4 @@
-name: 🚀 On push to main  
+name: 🚀 On push to main
 
 on:
   push:
@@ -61,5 +61,5 @@ jobs:
           target: final
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/Alan-Gomes1/rinha-backend-2025:${{ steps.get_tag.outputs.tag }}
-            ghcr.io/Alan-Gomes1/rinha-backend-2025:latest
+            ghcr.io/alan-gomes1/rinha-backend-2025:${{ steps.get_tag.outputs.tag }}
+            ghcr.io/alan-gomes1/rinha-backend-2025:latest
