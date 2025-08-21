@@ -24,7 +24,6 @@ class Settings(BaseSettings):
     TIMEOUT: int
     CONNECT_TIMEOUT: float
     REDIS_KEY_EXPIRATION: int
-    REDIS_PENDING_QUEUE: str
     PAYMENT_KEY: str
 
 
