@@ -29,6 +29,9 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 # Copy the application code
 COPY app ./app
 
+# Copy the .env file
+COPY .env .
+
 # Expose port and run the application
 EXPOSE 9999
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9999", "--loop", "uvloop", "--http", "httptools", "--workers", "1"]
